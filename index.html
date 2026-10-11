@@ -1,0 +1,519 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Reconfiguración del sistema de transporte de gas natural</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin:0; padding:0; font-family: Arial, sans-serif; background:#fff; }
+body { padding: 16px 20px; }
+h1 { font-size: 16px; margin:0 0 10px; }
+.row { display:flex; gap:12px; flex-wrap:wrap; margin-bottom:10px; align-items:flex-end; }
+.col { flex:1; min-width:200px; }
+label { font-size:12px; color:#555; display:block; margin-bottom:3px; }
+button { padding:5px 12px; cursor:pointer; font-size:12px; }
+.hint { font-size:11px; color:#777; }
+#chartWrap { position:relative; width:100%; min-height:600px; margin-bottom:24px; border:1px solid #eee; }
+#legend { margin-bottom:6px; min-height:16px; display:flex; gap:14px; flex-wrap:wrap; font-size:12px; color:#333; }
+#legend span.sw { display:inline-block; width:11px; height:11px; border-radius:2px; margin-right:5px; vertical-align:middle; }
+#tableWrap { overflow-x:auto; }
+#dataTable { border-collapse:collapse; font-size:12px; width:max-content; min-width:100%; }
+#dataTable thead th { background:#2c5f8a; color:#fff; padding:5px 10px; text-align:center; white-space:nowrap; }
+#dataTable thead th.col-left { text-align:left; }
+#dataTable thead th:nth-child(1) { position:sticky; left:0; z-index:3; min-width:170px; width:170px; }
+#dataTable thead th:nth-child(2) { position:sticky; left:170px; z-index:3; min-width:250px; width:250px; box-shadow:2px 0 4px rgba(0,0,0,0.15); }
+#dataTable td { padding:4px 10px; border-bottom:1px solid #eee; white-space:nowrap; }
+#dataTable td.num { text-align:right; font-variant-numeric:tabular-nums; }
+#dataTable td:nth-child(1) { position:sticky; left:0; z-index:2; width:170px; min-width:170px; }
+#dataTable td:nth-child(2) { position:sticky; left:170px; z-index:2; width:250px; min-width:250px; box-shadow:2px 0 4px rgba(0,0,0,0.15); }
+#dataTable tr td { background:#fff; }
+#dataTable tr.grupo-header td { background:#dce8f5; font-weight:700; color:#1a3a5c; }
+#dataTable tr.subtotal-row td { background:#eef4fb; font-weight:600; color:#2c5f8a; }
+#dataTable tr.ip-row td { background:#e3e9f8; color:#0b2f8f; }
+#dataTable tr.ip-row td:first-child { border-left:4px solid #0b2f8f; }
+#dataTable tr.total-row td { background:#1a3a5c; color:#fff; font-weight:700; }
+#dataTable tr:hover:not(.grupo-header):not(.total-row):not(.subtotal-row) td { background:#f0f6ff; }
+.node rect { stroke:#fff; stroke-width:0.5px; cursor:pointer; }
+.node text { font-size:11px; fill:#1a3a5c; pointer-events:none; }
+.link { fill:none; stroke-opacity:0.35; transition: stroke-opacity 0.15s; }
+.link:hover { stroke-opacity:0.65; }
+.link.ip { stroke-opacity:0.72; }
+.link.ip:hover { stroke-opacity:0.92; }
+.link.dim { stroke-opacity:0.06; }
+@keyframes linkGlowPulse { 0%,100% { stroke-opacity:0.55; } 50% { stroke-opacity:0.95; } }
+.link.highlight { stroke:#6fcf97; filter:url(#glowGreen); animation: linkGlowPulse 1.6s ease-in-out infinite; }
+.link.highlight:hover { stroke-opacity:0.95; }
+.node.dim rect { opacity:0.25; }
+.node.dim text { opacity:0.3; }
+#tooltip {
+  position:fixed; pointer-events:none; background:#1a3a5c; color:#fff; font-size:12px;
+  padding:6px 10px; border-radius:4px; opacity:0; transition:opacity 0.1s; z-index:10; max-width:280px;
+}
+</style>
+</head>
+<body>
+<h1>Reconfiguración del sistema de transporte de gas natural — Capacidades (MMm3/día)</h1>
+<div class="row">
+  <div class="col">
+    <label>Cuenca de origen</label>
+    <label style="display:flex;align-items:center;gap:6px;padding:2px 0;cursor:pointer;font-weight:500;border-bottom:1px solid #eee;margin-bottom:4px;">
+      <input type="checkbox" id="puntoSelectAll"> Seleccionar / deseleccionar todos
+    </label>
+    <div id="puntoBox" style="height:140px; overflow-y:auto; border:1px solid #ccc; padding:6px; font-size:13px;"></div>
+  </div>
+  <div class="col">
+    <label>Distribuidora</label>
+    <label style="display:flex;align-items:center;gap:6px;padding:2px 0;cursor:pointer;font-weight:500;border-bottom:1px solid #eee;margin-bottom:4px;">
+      <input type="checkbox" id="cargSelectAll"> Seleccionar / deseleccionar todos
+    </label>
+    <div id="cargBox" style="height:140px; overflow-y:auto; border:1px solid #ccc; padding:6px; font-size:13px;"></div>
+  </div>
+</div>
+<div class="row" style="align-items:center; flex-wrap:wrap;">
+  <label id="ipWrap" style="display:flex;align-items:center;gap:6px;cursor:pointer;font-weight:600;color:#0b2f8f;margin-right:14px;"><input type="checkbox" id="ipToggle" checked> <span class="sw" style="background:#0b2f8f;display:inline-block;width:12px;height:12px;"></span> Incluir Categoría IP</label>
+  <label id="estWrap" style="display:flex;align-items:center;gap:6px;cursor:pointer;font-weight:600;color:#2e8b57;margin-right:14px;"><input type="checkbox" id="estToggle" checked> <span class="sw" style="background:#6fcf97;display:inline-block;width:12px;height:12px;"></span> Incluir acuerdos estacionales</label>
+  <span class="hint">Sin selección = todos. Pasá el mouse sobre nodos o flujos del Sankey para ver el detalle.</span>
+</div>
+<div id="legend"></div>
+<div id="chartWrap"><svg id="chart"></svg></div>
+<div id="tableWrap">
+  <table id="dataTable"><thead id="tableHead"></thead><tbody id="tableBody"></tbody></table>
+</div>
+<div id="tooltip"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3-sankey/0.12.3/d3-sankey.min.js"></script>
+<script>
+// ---- Datos: Reconfiguración del sistema de transporte de gas natural (RESOL-2026-66-APN-SE/MEC, Tabla 11 - actualización 2026-10-06, con columna Categoría R66 / IP) ----
+// La Cuenca ahora incluye el operador/transportista (ej. "Neuquén - TGS", "Neuquén - GPM", "Neuquén - TGN").
+// Cada "leg" es un tramo de UNA sola columna del Excel: Cuenca -> Subzona (directo) | Cuenca -> Salliqueló | Salliqueló -> GBA | Salliqueló -> Subzona | GBA -> Subzona (x2).
+// Los valores NO se suman entre columnas: cada tramo conserva su propio volumen (MMm3/día).
+const LEGS = [{"est": false, "cat": "R66", "tipo": "4. Cuenca → Salliqueló", "cuenca": "Neuquén - GPM", "zona": null, "dist": "Camuzzi Gas del Sur", "value": 3.03}, {"est": false, "cat": "R66", "tipo": "6. Salliqueló → Subzona", "cuenca": null, "zona": "Buenos Aires Sur", "dist": "Camuzzi Gas del Sur", "value": 3.03}, {"est": false, "cat": "R66", "tipo": "1. Directo: Cuenca → Subzona", "cuenca": "Neuquén - TGS", "zona": "Buenos Aires Sur", "dist": "Camuzzi Gas del Sur", "value": 0.28}, {"est": false, "cat": "R66", "tipo": "1. Directo: Cuenca → Subzona", "cuenca": "Santa Cruz - TGS", "zona": "Buenos Aires Sur", "dist": "Camuzzi Gas del Sur", "value": 0.09}, {"est": false, "cat": "R66", "tipo": "4. Cuenca → Salliqueló", "cuenca": "Neuquén - GPM", "zona": null, "dist": "Camuzzi Gas del Sur", "value": 3.82}, {"est": false, "cat": "R66", "tipo": "6. Salliqueló → Subzona", "cuenca": null, "zona": "Chubut Sur", "dist": "Camuzzi Gas del Sur", "value": 3.82}, {"est": false, "cat": "R66", "tipo": "1. Directo: Cuenca → Subzona", "cuenca": "Santa Cruz - TGS", "zona": "Chubut Sur", "dist": "Camuzzi Gas del Sur", "value": 0.1}, {"est": false, "cat": "R66", "tipo": "1. Directo: Cuenca → Subzona", "cuenca": "Tierra del Fuego - TGS", "zona": "Chubut Sur", "dist": "Camuzzi Gas del Sur", "value": 0.43}, {"est": false, "cat": "R66", "tipo": "1. Directo: Cuenca → Subzona", "cuenca": "Neuquén - TGS", "zona": "Neuquén", "dist": "Camuzzi Gas del Sur", "value": 5.97}, {"est": false, "cat": "R66", "tipo": "1. Directo: Cuenca → Subzona", "cuenca": "Santa Cruz - TGS", "zona": "Santa Cruz Sur", "dist": "Camuzzi Gas del Sur", "value": 0.03}, {"est": false, "cat": "R66", "tipo": "1. Directo: Cuenca → Subzona", "cuenca": "Tierra del Fuego - TGS", "zona": "Santa Cruz Sur", "dist": "Camuzzi Gas del Sur", "value": 1.17}, {"est": false, "cat": "R66", "tipo": "1. Directo: Cuenca → Subzona", "cuenca": "Tierra del Fuego - TGS", "zona": "Tierra del Fuego", "dist": "Camuzzi Gas del Sur", "value": 1.8}, {"est": false, "cat": "R66", "tipo": "1. Directo: Cuenca → Subzona", "cuenca": "Neuquén - TGS", "zona": "Bahía Blanca", "dist": "Camuzzi Gas Pampeana", "value": 1.98}, {"est": false, "cat": "R66", "tipo": "1. Directo: Cuenca → Subzona", "cuenca": "Tierra del Fuego - TGS", "zona": "Bahía Blanca", "dist": "Camuzzi Gas Pampeana", "value": 0.05}, {"est": false, "cat": "R66", "tipo": "1. Directo: Cuenca → Subzona", "cuenca": "Neuquén - TGS", "zona": "Buenos Aires", "dist": "Camuzzi Gas Pampeana", "value": 10.99}, {"est": false, "cat": "R66", "tipo": "1. Directo: Cuenca → Subzona", "cuenca": "Tierra del Fuego - TGS", "zona": "Buenos Aires", "dist": "Camuzzi Gas Pampeana", "value": 3.36}, {"est": false, "cat": "R66", "tipo": "4. Cuenca → Salliqueló", "cuenca": "Neuquén - GPM", "zona": null, "dist": "Camuzzi Gas Pampeana", "value": 0.17}, {"est": false, "cat": "R66", "tipo": "7. GBA → Subzona (GPM)", "cuenca": null, "zona": "Litoral", "dist": "Camuzzi Gas Pampeana", "value": 0.24}, {"est": false, "cat": "R66", "tipo": "5. Salliqueló → GBA", "cuenca": null, "zona": null, "dist": "Camuzzi Gas Pampeana", "value": 0.17}, {"est": false, "cat": "R66", "tipo": "2. Cuenca → GBA (TGS)", "cuenca": "Neuquén - TGS", "zona": null, "dist": "Camuzzi Gas Pampeana", "value": 0.07}, {"est": false, "cat": "R66", "tipo": "1. Directo: Cuenca → Subzona", "cuenca": "Neuquén - TGN", "zona": "Cuyana", "dist": "Distribuidora de Gas Cuyana", "value": 7.29}, {"est": false, "cat": "R66", "tipo": "3. GBA → Subzona (GNL)", "cuenca": "GNL", "zona": "Centro Norte", "dist": "Distribuidora de Gas del Centro", "value": 0.7}, {"est": false, "cat": "R66", "tipo": "1. Directo: Cuenca → Subzona", "cuenca": "Neuquén - TGN", "zona": "Centro Norte", "dist": "Distribuidora de Gas del Centro", "value": 6.03}, {"est": false, "cat": "R66", "tipo": "3. GBA → Subzona (GNL)", "cuenca": "GNL", "zona": "Centro Sur", "dist": "Distribuidora de Gas del Centro", "value": 0.15}, {"est": false, "cat": "R66", "tipo": "1. Directo: Cuenca → Subzona", "cuenca": "Neuquén - TGN", "zona": "Centro Sur", "dist": "Distribuidora de Gas del Centro", "value": 1.29}, {"est": false, "cat": "R66", "tipo": "3. GBA → Subzona (GNL)", "cuenca": "GNL", "zona": "Aldea Brasileña", "dist": "Gas NEA", "value": 0.03}, {"est": false, "cat": "R66", "tipo": "1. Directo: Cuenca → Subzona", "cuenca": "Neuquén - TGN", "zona": "Aldea Brasileña", "dist": "Gas NEA", "value": 1.46}, {"est": false, "cat": "R66", "tipo": "4. Cuenca → Salliqueló", "cuenca": "Neuquén - GPM", "zona": null, "dist": "Litoral Gas", "value": 2.51}, {"est": false, "cat": "R66", "tipo": "3. GBA → Subzona (GNL)", "cuenca": "GNL", "zona": "Litoral", "dist": "Litoral Gas", "value": 0.17}, {"est": false, "cat": "R66", "tipo": "7. GBA → Subzona (GPM)", "cuenca": null, "zona": "Litoral", "dist": "Litoral Gas", "value": 3.62}, {"est": false, "cat": "R66", "tipo": "1. Directo: Cuenca → Subzona", "cuenca": "Neuquén - TGN", "zona": "Litoral", "dist": "Litoral Gas", "value": 3.77}, {"est": false, "cat": "R66", "tipo": "5. Salliqueló → GBA", "cuenca": null, "zona": null, "dist": "Litoral Gas", "value": 2.51}, {"est": false, "cat": "R66", "tipo": "2. Cuenca → GBA (TGS)", "cuenca": "Neuquén - TGS", "zona": null, "dist": "Litoral Gas", "value": 1.11}, {"est": false, "cat": "R66", "tipo": "4. Cuenca → Salliqueló", "cuenca": "Neuquén - GPM", "zona": null, "dist": "MetroGAS", "value": 3.04}, {"est": false, "cat": "R66", "tipo": "3. GBA → Subzona (GNL)", "cuenca": "GNL", "zona": "GBA (MetroGAS)", "dist": "MetroGAS", "value": 0.12}, {"est": false, "cat": "R66", "tipo": "7. GBA → Subzona (GPM)", "cuenca": null, "zona": "GBA (MetroGAS)", "dist": "MetroGAS", "value": 2.48}, {"est": false, "cat": "R66", "tipo": "9. GBA → Subzona (TGS)", "cuenca": null, "zona": "GBA (MetroGAS)", "dist": "MetroGAS", "value": 0.56}, {"est": false, "cat": "R66", "tipo": "5. Salliqueló → GBA", "cuenca": null, "zona": null, "dist": "MetroGAS", "value": 3.04}, {"est": false, "cat": "R66", "tipo": "1. Directo: Cuenca → Subzona", "cuenca": "Neuquén - TGS", "zona": "GBA (MetroGAS)", "dist": "MetroGAS", "value": 10.2}, {"est": false, "cat": "R66", "tipo": "1. Directo: Cuenca → Subzona", "cuenca": "Tierra del Fuego - TGS", "zona": "GBA (MetroGAS)", "dist": "MetroGAS", "value": 3.75}, {"est": false, "cat": "R66", "tipo": "4. Cuenca → Salliqueló", "cuenca": "Neuquén - GPM", "zona": null, "dist": "Naturgy BAN", "value": 8.42}, {"est": false, "cat": "R66", "tipo": "3. GBA → Subzona (GNL)", "cuenca": "GNL", "zona": "GBA (Naturgy BAN)", "dist": "Naturgy BAN", "value": 0.11}, {"est": false, "cat": "R66", "tipo": "7. GBA → Subzona (GPM)", "cuenca": null, "zona": "GBA (Naturgy BAN)", "dist": "Naturgy BAN", "value": 4.85}, {"est": false, "cat": "R66", "tipo": "9. GBA → Subzona (TGS)", "cuenca": null, "zona": "GBA (Naturgy BAN)", "dist": "Naturgy BAN", "value": 3.57}, {"est": false, "cat": "R66", "tipo": "5. Salliqueló → GBA", "cuenca": null, "zona": null, "dist": "Naturgy BAN", "value": 8.42}, {"est": false, "cat": "R66", "tipo": "1. Directo: Cuenca → Subzona", "cuenca": "Neuquén - TGS", "zona": "GBA (Naturgy BAN)", "dist": "Naturgy BAN", "value": 6.79}, {"est": false, "cat": "R66", "tipo": "1. Directo: Cuenca → Subzona", "cuenca": "Tierra del Fuego - TGS", "zona": "GBA (Naturgy BAN)", "dist": "Naturgy BAN", "value": 0.54}, {"est": false, "cat": "R66", "tipo": "3. GBA → Subzona (GNL)", "cuenca": "GNL", "zona": "Salta", "dist": "Naturgy NOA", "value": 0.03}, {"est": false, "cat": "R66", "tipo": "1. Directo: Cuenca → Subzona", "cuenca": "Neuquén - TGN", "zona": "Salta", "dist": "Naturgy NOA", "value": 1.44}, {"est": false, "cat": "R66", "tipo": "3. GBA → Subzona (GNL)", "cuenca": "GNL", "zona": "Tucumán", "dist": "Naturgy NOA", "value": 0.04}, {"est": false, "cat": "R66", "tipo": "1. Directo: Cuenca → Subzona", "cuenca": "Neuquén - TGN", "zona": "Tucumán", "dist": "Naturgy NOA", "value": 1.7}, {"est": true, "cat": "IP", "tipo": "4. Cuenca → Salliqueló", "cuenca": "Neuquén - GPM", "zona": null, "dist": "Litoral Gas", "value": 0.308341}, {"est": true, "cat": "IP", "tipo": "5. Salliqueló → GBA", "cuenca": null, "zona": null, "dist": "Litoral Gas", "value": 0.308341}, {"est": true, "cat": "IP", "tipo": "7. GBA → Subzona (GPM)", "cuenca": null, "zona": "Litoral 45 días invierno (Acuerdo)", "dist": "Litoral Gas", "value": 0.308341}, {"est": false, "cat": "IP", "tipo": "4. Cuenca → Salliqueló", "cuenca": "Neuquén - GPM", "zona": null, "dist": "MetroGAS", "value": 1.022942}, {"est": false, "cat": "IP", "tipo": "5. Salliqueló → GBA", "cuenca": null, "zona": null, "dist": "MetroGAS", "value": 1.022942}, {"est": false, "cat": "IP", "tipo": "9. GBA → Subzona (TGS)", "cuenca": null, "zona": "GBA (MetroGAS)", "dist": "MetroGAS", "value": 1.022942}, {"est": false, "cat": "IP", "tipo": "4. Cuenca → Salliqueló", "cuenca": "Neuquén - GPM", "zona": null, "dist": "Naturgy BAN", "value": 0.279323}, {"est": false, "cat": "IP", "tipo": "5. Salliqueló → GBA", "cuenca": null, "zona": null, "dist": "Naturgy BAN", "value": 0.279323}, {"est": false, "cat": "IP", "tipo": "7. GBA → Subzona (GPM)", "cuenca": null, "zona": "GBA (Naturgy BAN)", "dist": "Naturgy BAN", "value": 0.279323}, {"est": false, "cat": "IP", "tipo": "4. Cuenca → Salliqueló", "cuenca": "Neuquén - GPM", "zona": null, "dist": "Naturgy NOA", "value": 1.127935}, {"est": false, "cat": "IP", "tipo": "5. Salliqueló → GBA", "cuenca": null, "zona": null, "dist": "Naturgy NOA", "value": 1.127935}, {"est": false, "cat": "IP", "tipo": "7. GBA → Subzona (GPM)", "cuenca": null, "zona": "NOA (a definir)", "dist": "Naturgy NOA", "value": 1.127935}, {"est": false, "cat": "IP", "tipo": "4. Cuenca → Salliqueló", "cuenca": "Neuquén - GPM", "zona": null, "dist": "Litoral Gas", "value": 0.60641}, {"est": false, "cat": "IP", "tipo": "5. Salliqueló → GBA", "cuenca": null, "zona": null, "dist": "Litoral Gas", "value": 0.60641}, {"est": false, "cat": "IP", "tipo": "7. GBA → Subzona (GPM)", "cuenca": null, "zona": "Litoral", "dist": "Litoral Gas", "value": 0.60641}, {"est": false, "cat": "IP", "tipo": "4. Cuenca → Salliqueló", "cuenca": "Neuquén - GPM", "zona": null, "dist": "Gas NEA", "value": 0.124645}, {"est": false, "cat": "IP", "tipo": "5. Salliqueló → GBA", "cuenca": null, "zona": null, "dist": "Gas NEA", "value": 0.124645}, {"est": false, "cat": "IP", "tipo": "7. GBA → Subzona (GPM)", "cuenca": null, "zona": "Aldea Brasileña", "dist": "Gas NEA", "value": 0.124645}, {"est": false, "cat": "IP", "tipo": "4. Cuenca → Salliqueló", "cuenca": "Neuquén - GPM", "zona": null, "dist": "Distribuidora de Gas del Centro", "value": 1.219352}, {"est": false, "cat": "IP", "tipo": "5. Salliqueló → GBA", "cuenca": null, "zona": null, "dist": "Distribuidora de Gas del Centro", "value": 1.219352}, {"est": false, "cat": "IP", "tipo": "7. GBA → Subzona (GPM)", "cuenca": null, "zona": "Central (a definir)", "dist": "Distribuidora de Gas del Centro", "value": 1.219352}, {"est": false, "cat": "IP", "tipo": "4. Cuenca → Salliqueló", "cuenca": "Neuquén - GPM", "zona": null, "dist": "Camuzzi Gas Pampeana", "value": 1.020555}, {"est": false, "cat": "IP", "tipo": "5. Salliqueló → GBA", "cuenca": null, "zona": null, "dist": "Camuzzi Gas Pampeana", "value": 1.020555}, {"est": false, "cat": "IP", "tipo": "7. GBA → Subzona (GPM)", "cuenca": null, "zona": "Camuzzi (a definir)", "dist": "Camuzzi Gas Pampeana", "value": 1.020555}, {"est": true, "cat": "IP", "tipo": "4. Cuenca → Salliqueló", "cuenca": "Neuquén - GPM", "zona": null, "dist": "MetroGAS", "value": 0.816077}, {"est": true, "cat": "IP", "tipo": "5. Salliqueló → GBA", "cuenca": null, "zona": null, "dist": "MetroGAS", "value": 0.816077}, {"est": true, "cat": "IP", "tipo": "9. GBA → Subzona (TGS)", "cuenca": null, "zona": "GBA (MetroGAS) 45 días invierno (Acuerdo)", "dist": "MetroGAS", "value": 0.816077}, {"est": true, "cat": "IP", "tipo": "4. Cuenca → Salliqueló", "cuenca": "Neuquén - GPM", "zona": null, "dist": "MetroGAS", "value": 0.204019}, {"est": true, "cat": "IP", "tipo": "5. Salliqueló → GBA", "cuenca": null, "zona": null, "dist": "MetroGAS", "value": 0.204019}, {"est": true, "cat": "IP", "tipo": "9. GBA → Subzona (TGS)", "cuenca": null, "zona": "GBA (MetroGAS) 92 días invierno (Acuerdo)", "dist": "MetroGAS", "value": 0.204019}];
+
+const TRAT = 'Salliqueló';
+const GBA = 'GBA';
+
+const CUENCAS = Array.from(new Set(LEGS.filter(l=>l.cuenca).map(l=>l.cuenca).concat(['GNL']))).sort();
+const DISTS = Array.from(new Set(LEGS.filter(l=>l.dist).map(l=>l.dist))).sort();
+const TIPOS = Array.from(new Set(LEGS.map(l=>l.tipo))).sort();
+
+const TYPE_COLOR = { cuenca:'#1a3a5c', trat:'#c98a2c', gba:'#7a4fa3', zona:'#2c5f8a', dist:'#5b9bd5', ajuste:'#b0b0b0' };
+const ACUERDO_COLOR = '#6fcf97';
+const IP_COLOR = '#0b2f8f';
+function isAcuerdo(name){ return /acuerdo/i.test(name||''); }
+function nodeColor(d){ if(d.type==='zona' && isAcuerdo(d.name)) return ACUERDO_COLOR; if(d.allIP) return IP_COLOR; return TYPE_COLOR[d.type]; }
+function isHighlightLink(d){ return d.source.type==='zona' && d.target.type==='dist' && isAcuerdo(d.source.name); }
+const TYPE_LABEL = { cuenca:'Cuenca de origen', trat:'Salliqueló', gba:'GBA', zona:'Zona de entrega', dist:'Distribuidora' };
+
+const legendEl = document.getElementById('legend');
+Object.keys(TYPE_LABEL).forEach(t=>{
+  const s = document.createElement('span');
+  s.innerHTML = `<span class="sw" style="background:${TYPE_COLOR[t]}"></span>${TYPE_LABEL[t]}`;
+  legendEl.appendChild(s);
+});
+(function(){ const s = document.createElement('span'); s.innerHTML = `<span class="sw" style="background:${IP_COLOR}"></span>Categoría IP (sombreado azul oscuro)`; legendEl.appendChild(s); })();
+
+const puntoBox = document.getElementById('puntoBox');
+const cargBox = document.getElementById('cargBox');
+
+// Qué cuenca(s) alimentan realmente a Salliqueló y a GBA, por distribuidora.
+// Los tramos 5/6 (Salliqueló→GBA / Salliqueló→Subzona) y 7/9 (GBA→Subzona GPM/TGS) no llevan su propia
+// cuenca en el Excel, así que la heredan de los tramos que sí la tienen, para la misma distribuidora.
+let TRAT_CUENCA_BY_DIST = {}, GBA_CUENCA_BY_DIST = {}, GBA_INFLOW_BY_DIST = {};
+function rebuildLookups(src){
+  TRAT_CUENCA_BY_DIST = {}; GBA_CUENCA_BY_DIST = {}; GBA_INFLOW_BY_DIST = {};
+  src.forEach(l=>{
+    if(l.tipo === '4. Cuenca → Salliqueló'){ (TRAT_CUENCA_BY_DIST[l.dist] ||= new Set()).add(l.cuenca); }
+  });
+  src.forEach(l=>{
+    if(l.tipo === '2. Cuenca → GBA (TGS)'){ (GBA_CUENCA_BY_DIST[l.dist] ||= new Set()).add(l.cuenca); }
+    if(l.tipo === '3. GBA → Subzona (GNL)'){ (GBA_CUENCA_BY_DIST[l.dist] ||= new Set()).add('GNL'); }
+  });
+  src.forEach(l=>{
+    if(l.tipo === '5. Salliqueló → GBA'){
+      const s = TRAT_CUENCA_BY_DIST[l.dist];
+      if(s) s.forEach(c => (GBA_CUENCA_BY_DIST[l.dist] ||= new Set()).add(c));
+    }
+  });
+  // Aporte de cada cuenca al ingreso a GBA por distribuidora (para repartir la salida de GBA al filtrar por cuenca).
+  src.forEach(l=>{
+    if(l.tipo === '2. Cuenca → GBA (TGS)'){
+      (GBA_INFLOW_BY_DIST[l.dist] ||= {});
+      GBA_INFLOW_BY_DIST[l.dist][l.cuenca] = (GBA_INFLOW_BY_DIST[l.dist][l.cuenca]||0) + l.value;
+    }
+    if(l.tipo === '5. Salliqueló → GBA'){
+      const set = TRAT_CUENCA_BY_DIST[l.dist];
+      if(set && set.size){
+        (GBA_INFLOW_BY_DIST[l.dist] ||= {});
+        set.forEach(c=>{ GBA_INFLOW_BY_DIST[l.dist][c] = (GBA_INFLOW_BY_DIST[l.dist][c]||0) + l.value/set.size; });
+      }
+    }
+  });
+}
+// Selector "Categoría IP": si está apagado se excluyen todos los tramos con cat === 'IP'.
+function includeIP(){ return document.getElementById('ipToggle').checked; }
+function includeEst(){ return document.getElementById('estToggle').checked; }
+function activeLegs(){ return LEGS.filter(l=> (includeIP() || l.cat !== 'IP') && (includeEst() || !l.est)); }
+rebuildLookups(activeLegs());
+
+function legCuencaSet(l){
+  if(l.cuenca) return new Set([l.cuenca]);
+  if(l.tipo === '5. Salliqueló → GBA' || l.tipo === '6. Salliqueló → Subzona'){
+    return TRAT_CUENCA_BY_DIST[l.dist] || new Set();
+  }
+  if(l.tipo === '7. GBA → Subzona (GPM)' || l.tipo === '9. GBA → Subzona (TGS)'){
+    return GBA_CUENCA_BY_DIST[l.dist] || new Set();
+  }
+  return new Set();
+}
+
+function legPassesCuenca(l, selPuntos){
+  if(!selPuntos.length) return true;
+  const set = legCuencaSet(l);
+  for(const c of set){ if(selPuntos.includes(c)) return true; }
+  return false;
+}
+
+// Fracción del volumen de salida de GBA (columnas GPM/TGS a Subzona) que corresponde a las
+// cuencas seleccionadas, según su participación real en el ingreso a GBA de esa distribuidora.
+function gbaOutflowShare(dist, selPuntos){
+  if(!selPuntos.length) return 1;
+  const inflow = GBA_INFLOW_BY_DIST[dist];
+  if(!inflow) return 1;
+  let total = 0, matched = 0;
+  for(const c in inflow){
+    total += inflow[c];
+    if(selPuntos.includes(c)) matched += inflow[c];
+  }
+  if(total <= 0) return 1;
+  return matched/total;
+}
+
+function makeCheckbox(container, text, value, cls, onChange){
+  const label = document.createElement('label');
+  label.style.display='flex'; label.style.alignItems='center'; label.style.gap='6px'; label.style.padding='2px 0'; label.style.cursor='pointer'; label.style.fontWeight='normal';
+  const cb = document.createElement('input');
+  cb.type='checkbox'; cb.value=value; cb.className=cls;
+  cb.addEventListener('change', onChange);
+  label.appendChild(cb);
+  label.appendChild(document.createTextNode(text));
+  container.appendChild(label);
+  return cb;
+}
+
+CUENCAS.forEach((p)=>{ makeCheckbox(puntoBox, p, p, 'puntoCb', onPuntoChange); });
+
+function getCheckedPuntos(){ return Array.from(document.querySelectorAll('.puntoCb:checked')).map(cb=>cb.value); }
+function getCheckedCargs(){ return Array.from(document.querySelectorAll('.cargCb:checked')).map(cb=>cb.value); }
+
+function buildCargCheckboxes(){
+  const checkedCargs = new Set(getCheckedCargs());
+  cargBox.innerHTML = '';
+  const selPuntos = getCheckedPuntos();
+  let availableDists;
+  if(selPuntos.length){
+    const set = new Set();
+    activeLegs().forEach(l=>{
+      if(legPassesCuenca(l, selPuntos)) set.add(l.dist);
+    });
+    availableDists = Array.from(set);
+  } else {
+    availableDists = DISTS.slice();
+  }
+  availableDists.sort((a,b)=>a.localeCompare(b));
+  availableDists.forEach(d=>{
+    const cb = makeCheckbox(cargBox, d, d, 'cargCb', ()=>{ syncCargSelectAll(); render(); });
+    if(checkedCargs.has(d)) cb.checked = true;
+  });
+  syncCargSelectAll();
+}
+
+function onPuntoChange(){ buildCargCheckboxes(); syncPuntoSelectAll(); render(); }
+
+const puntoSelectAll = document.getElementById('puntoSelectAll');
+const cargSelectAll = document.getElementById('cargSelectAll');
+
+function syncPuntoSelectAll(){
+  const all = document.querySelectorAll('.puntoCb');
+  const checked = document.querySelectorAll('.puntoCb:checked');
+  puntoSelectAll.checked = all.length > 0 && all.length === checked.length;
+}
+function syncCargSelectAll(){
+  const all = document.querySelectorAll('.cargCb');
+  const checked = document.querySelectorAll('.cargCb:checked');
+  cargSelectAll.checked = all.length > 0 && all.length === checked.length;
+}
+
+buildCargCheckboxes();
+
+['ipToggle','estToggle'].forEach(id=>document.getElementById(id).addEventListener('change', ()=>{
+  rebuildLookups(activeLegs());
+  buildCargCheckboxes();
+  render();
+}));
+
+puntoSelectAll.addEventListener('change', ()=>{
+  document.querySelectorAll('.puntoCb').forEach(cb=>cb.checked = puntoSelectAll.checked);
+  buildCargCheckboxes();
+  render();
+});
+cargSelectAll.addEventListener('change', ()=>{
+  document.querySelectorAll('.cargCb').forEach(cb=>cb.checked = cargSelectAll.checked);
+  render();
+});
+
+// ---- Sankey rendering ----
+const svg = d3.select('#chart');
+const margin = {top: 50, right: 220, bottom: 10, left: 140};
+let width = 1180, height = 640;
+
+const tooltip = document.getElementById('tooltip');
+function showTip(html, evt){
+  tooltip.innerHTML = html;
+  tooltip.style.left = (evt.clientX+14)+'px';
+  tooltip.style.top = (evt.clientY+10)+'px';
+  tooltip.style.opacity = 1;
+}
+function hideTip(){ tooltip.style.opacity = 0; }
+function fmt(v){ return v.toLocaleString('es-AR', {minimumFractionDigits:2, maximumFractionDigits:2}); }
+
+function computeSize(){
+  const w = document.getElementById('chartWrap').clientWidth || 1180;
+  width = Math.max(950, w);
+  height = 640;
+  svg.attr('width', width).attr('height', height).attr('viewBox', [0,0,width,height]);
+}
+
+function filteredLegs(){
+  const selPuntos = getCheckedPuntos();
+  const selCargs = getCheckedCargs();
+  return activeLegs().filter(l=>{
+    if(!legPassesCuenca(l, selPuntos)) return false;
+    if(selCargs.length && !selCargs.includes(l.dist)) return false;
+    return true;
+  }).map(l=>{
+    if(l.tipo === '7. GBA → Subzona (GPM)' || l.tipo === '9. GBA → Subzona (TGS)'){
+      const share = gbaOutflowShare(l.dist, selPuntos);
+      if(share < 0.9999){
+        return {...l, value: Math.round(l.value*share*100)/100};
+      }
+    }
+    return l;
+  });
+}
+
+// Cada tipo de tramo define los nodos de origen/destino que le corresponden según el encabezado real del Excel.
+// La columna I se llama "Ruta: GBA (GNL) a Subzona" -> el GNL entra directo a GBA (sin pasar por Salliqueló).
+function buildGraph(legs){
+  const nodes = [];
+  const nodeIdx = {};
+  function gi(n){
+    if(!(n.key in nodeIdx)){ nodeIdx[n.key] = nodes.length; nodes.push(n); }
+    return nodeIdx[n.key];
+  }
+  const linkMap = new Map();
+  let curCat = 'R66';
+  function addLink(a,b,v){
+    const ai = gi(a), bi = gi(b);
+    const k = ai+'>'+bi+'>'+curCat;
+    linkMap.set(k, (linkMap.get(k)||0) + v);
+  }
+  const nCuenca = (name)=>({key:'cuenca::'+name, name, type:'cuenca'});
+  const nTrat = {key:'trat::'+TRAT, name:TRAT, type:'trat'};
+  const nGba = {key:'gba::'+GBA, name:GBA, type:'gba'};
+  const nZona = (name)=>({key:'zona::'+name, name, type:'zona'});
+  const nDist = (name)=>({key:'dist::'+name, name, type:'dist'});
+  const nAjusteOut = {key:'ajuste::out', name:'Sin especificar (excedente)', type:'ajuste'};
+  const nAjusteIn = {key:'ajuste::in', name:'Sin especificar (déficit)', type:'ajuste'};
+
+  legs.forEach(l=>{
+    curCat = l.cat || 'R66';
+    switch(l.tipo){
+      case '1. Directo: Cuenca → Subzona':
+        addLink(nCuenca(l.cuenca), nZona(l.zona), l.value);
+        break;
+      case '2. Cuenca → GBA (TGS)':
+        addLink(nCuenca(l.cuenca), nGba, l.value);
+        break;
+      case '3. GBA → Subzona (GNL)':
+        addLink(nCuenca('GNL'), nGba, l.value);
+        addLink(nGba, nZona(l.zona), l.value);
+        break;
+      case '4. Cuenca → Salliqueló':
+        addLink(nCuenca(l.cuenca), nTrat, l.value);
+        break;
+      case '5. Salliqueló → GBA':
+        addLink(nTrat, nGba, l.value);
+        break;
+      case '6. Salliqueló → Subzona':
+        addLink(nTrat, nZona(l.zona), l.value);
+        break;
+      case '7. GBA → Subzona (GPM)':
+        addLink(nGba, nZona(l.zona), l.value);
+        break;
+      case '9. GBA → Subzona (TGS)':
+        addLink(nGba, nZona(l.zona), l.value);
+        break;
+      case '8. Ajuste GBA (sin especificar en el Excel)':
+        if(l.direction === 'out'){ addLink(nGba, nAjusteOut, l.value); }
+        else { addLink(nAjusteIn, nGba, l.value); }
+        break;
+    }
+    if(l.zona && l.dist){
+      addLink(nZona(l.zona), nDist(l.dist), l.value);
+    }
+  });
+  const links = Array.from(linkMap.entries()).map(([k,v])=>{
+    const [s,t,cat] = k.split('>');
+    return {source:+s, target:+t, cat, value:Math.round(v*100)/100};
+  }).filter(l=>l.value>0.0001);
+  return {nodes, links};
+}
+
+function render(){
+  computeSize();
+  svg.selectAll('*').remove();
+  const legs = filteredLegs();
+  const graph = buildGraph(legs);
+
+  if(graph.links.length){
+    const TYPE_ORDER = ['cuenca','trat','gba','zona','dist'];
+    const presentTypes = TYPE_ORDER.filter(t => graph.nodes.some(n=>n.type===t));
+    const COLUMN_BY_TYPE = {};
+    presentTypes.forEach((t,i)=>{ COLUMN_BY_TYPE[t] = i; });
+    const sankeyGen = d3.sankey()
+      .nodeId(d=>d.index)
+      .nodeAlign((d)=>COLUMN_BY_TYPE[d.type])
+      .nodeWidth(14)
+      .nodePadding(10)
+      .extent([[margin.left, margin.top],[width-margin.right, height-margin.bottom]]);
+
+    const {nodes, links} = sankeyGen({
+      nodes: graph.nodes.map((d,i)=>({...d, index:i})),
+      links: graph.links.map(d=>({...d}))
+    });
+
+    nodes.forEach(n=>{
+      const ls = [...(n.sourceLinks||[]), ...(n.targetLinks||[])];
+      n.allIP = ls.length > 0 && ls.every(l=>l.cat === 'IP');
+    });
+
+    const defs = svg.append('defs');
+    const glow = defs.append('filter').attr('id','glowGreen')
+      .attr('x','-150%').attr('y','-150%').attr('width','400%').attr('height','400%');
+    glow.append('feGaussianBlur').attr('in','SourceGraphic').attr('stdDeviation', 3.2).attr('result','blur');
+    glow.append('feMerge').html('<feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/>');
+
+    const g = svg.append('g');
+
+    // Total de volumen por columna (Cuenca / Salliqueló / GBA / Zona / Distribuidora), según lo filtrado.
+    const colTotal = {};
+    const colX = {};
+    nodes.forEach(n=>{
+      const vOut = (n.sourceLinks||[]).reduce((a,l)=>a+l.value,0);
+      const vIn = (n.targetLinks||[]).reduce((a,l)=>a+l.value,0);
+      colTotal[n.type] = (colTotal[n.type]||0) + Math.max(vOut, vIn);
+      if(!(n.type in colX)) colX[n.type] = (n.x0+n.x1)/2;
+    });
+    const headerG = g.append('g');
+    Object.keys(colTotal).forEach(t=>{
+      const hg = headerG.append('g').attr('transform', `translate(${colX[t]},0)`);
+      hg.append('text')
+        .attr('text-anchor','middle')
+        .attr('y', 14)
+        .attr('font-size', 10)
+        .attr('fill', '#777')
+        .text(TYPE_LABEL[t] || t);
+      hg.append('text')
+        .attr('text-anchor','middle')
+        .attr('y', 30)
+        .attr('font-size', 12.5)
+        .attr('font-weight', 700)
+        .attr('fill', TYPE_COLOR[t])
+        .text(fmt(colTotal[t]) + ' MMm³/día');
+    });
+
+    const linkSel = g.append('g').attr('fill','none').selectAll('path')
+      .data(links).join('path')
+        .attr('class', d=>'link' + (d.cat==='IP' ? ' ip' : '') + (isHighlightLink(d) ? ' highlight' : ''))
+        .attr('d', d3.sankeyLinkHorizontal())
+        .attr('stroke', d=>isHighlightLink(d) ? ACUERDO_COLOR : (d.cat==='IP' ? IP_COLOR : TYPE_COLOR[d.source.type]))
+        .attr('stroke-width', d=>Math.max(1,d.width) + (isHighlightLink(d) ? 1.5 : 0))
+        .on('mousemove', (evt,d)=>{ showTip(`<b>${d.source.name}</b> → <b>${d.target.name}</b><br>${fmt(d.value)} MMm³/día${d.cat==='IP' ? '<br><i>Categoría IP</i>' : ''}`, evt); })
+        .on('mouseleave', hideTip);
+
+    const nodeSel = g.append('g').selectAll('g.node').data(nodes).join('g').attr('class','node');
+    nodeSel.append('rect')
+      .attr('x', d=>d.x0).attr('y', d=>d.y0)
+      .attr('width', d=>d.x1-d.x0).attr('height', d=>Math.max(1,d.y1-d.y0))
+      .attr('fill', d=>nodeColor(d))
+      .on('mousemove', (evt,d)=>{
+        const tin = d.targetLinks.reduce((a,l)=>a+l.value,0);
+        const tout = d.sourceLinks.reduce((a,l)=>a+l.value,0);
+        let detail = '';
+        if(d.targetLinks.length) detail += `Entra: ${fmt(tin)} MMm³/día<br>`;
+        if(d.sourceLinks.length) detail += `Sale: ${fmt(tout)} MMm³/día`;
+        showTip(`<b>${d.name}</b><br>${TYPE_LABEL[d.type]}${d.allIP ? ' (solo Categoría IP)' : ''}<br>${detail}`, evt);
+      })
+      .on('mouseenter', (evt,d)=>{
+        linkSel.classed('dim', l=>l.source!==d && l.target!==d);
+      })
+      .on('mouseleave', ()=>{ linkSel.classed('dim', false); hideTip(); });
+
+    nodeSel.append('text')
+      .attr('x', d=> d.x0 < width/2 ? d.x1+6 : d.x0-6)
+      .attr('y', d=> (d.y0+d.y1)/2)
+      .attr('dy','0.35em')
+      .attr('text-anchor', d=> d.x0 < width/2 ? 'start' : 'end')
+      .text(d=>d.name);
+  }
+
+  renderTable(legs);
+}
+
+function renderTable(legs){
+  const head = document.getElementById('tableHead');
+  const body = document.getElementById('tableBody');
+  head.innerHTML = '<tr><th class="col-left">Origen</th><th class="col-left">Destino</th><th>Capacidad (MMm3/día)</th></tr>';
+
+  const grupoOrder = TIPOS;
+  let rows = '';
+  const grandTotal = {sum:0};
+
+  function pathLabel(l){
+    switch(l.tipo){
+      case '1. Directo: Cuenca → Subzona': return [l.cuenca, `${l.zona} → ${l.dist}`];
+      case '2. Cuenca → GBA (TGS)': return [l.cuenca, GBA];
+      case '3. GBA → Subzona (GNL)': return ['GNL → GBA', `${l.zona} → ${l.dist}`];
+      case '4. Cuenca → Salliqueló': return [l.cuenca, TRAT];
+      case '5. Salliqueló → GBA': return [TRAT, GBA];
+      case '6. Salliqueló → Subzona': return [TRAT, `${l.zona} → ${l.dist}`];
+      case '7. GBA → Subzona (GPM)': return [GBA, `${l.zona} → ${l.dist}`];
+      case '9. GBA → Subzona (TGS)': return [GBA, `${l.zona} → ${l.dist}`];
+      case '8. Ajuste GBA (sin especificar en el Excel)':
+        return l.direction==='out' ? [GBA+' ('+l.dist+')', 'Sin especificar (excedente)'] : ['Sin especificar (déficit)', GBA+' ('+l.dist+')'];
+    }
+  }
+
+  grupoOrder.forEach(tipo=>{
+    const items = legs.filter(l=>l.tipo===tipo).sort((a,b)=> ((a.dist||a.cuenca||'')+(a.zona||'')).localeCompare((b.dist||b.cuenca||'')+(b.zona||'')));
+    if(!items.length) return;
+    let subtotal = 0;
+    rows += `<tr class="grupo-header"><td>${tipo}</td><td colspan="2"></td></tr>`;
+    items.forEach(it=>{
+      subtotal += it.value;
+      grandTotal.sum += it.value;
+      const [o,d] = pathLabel(it);
+      rows += `<tr class="${it.cat==='IP' ? 'ip-row' : ''}"><td>${o}${it.cat==='IP' ? ' <b>[IP]</b>' : ''}${it.est ? ' <b>[estacional]</b>' : ''}</td><td>${d}</td><td class="num">${fmt(it.value)}</td></tr>`;
+    });
+    rows += `<tr class="subtotal-row"><td></td><td>Subtotal ${tipo}</td><td class="num">${fmt(subtotal)}</td></tr>`;
+  });
+
+  rows += `<tr class="total-row"><td>TOTAL (suma de tramos, no de extremo a extremo)</td><td></td><td class="num">${fmt(grandTotal.sum)}</td></tr>`;
+  body.innerHTML = rows;
+}
+
+render();
+window.addEventListener('resize', render);
+</script>
+</body>
+</html>
